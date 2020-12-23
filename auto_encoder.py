@@ -90,17 +90,19 @@ def to_img(x):
 def train_model(model, criterion, optimizer, dataloader, num_epochs):
     ref_img = None
     if os.path.exists(CP_TEMPLATE.format(model.latent_dim)):
-        model, losses, last_epoch, ref_img = load_checkpoint(CP_TEMPLATE.format(model.latent_dim))
+        model, optimizer, losses, last_epoch, ref_img = load_checkpoint(CP_TEMPLATE.format(model.latent_dim),
+                                                                        model, optimizer)
     else:
         losses = []
         last_epoch = 0
 
     for epoch in range(last_epoch, num_epochs):
+        loss_sum = 0
         for data in dataloader:
             img, _ = data
             img = img.view(img.size(0), -1)
             img = Variable(img).cuda()
-            if ref_img:
+            if ref_img is None:
                 ref_img = deepcopy(img)
                 pic = to_img(ref_img.data)
                 save_image(pic, './mlp_img_ld{}/ref_image.png'.format(model.latent_dim))
@@ -113,20 +115,22 @@ def train_model(model, criterion, optimizer, dataloader, num_epochs):
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+            loss_sum += loss.item()
             gc.collect()
 
-        print('epoch [{}/{}], loss:{:.4f}'.format(epoch + 1, num_epochs, loss.item()))
-        losses.append(loss.item())
+        loss_avg = loss_sum / len(dataloader)
+        print('epoch [{}/{}], loss:{:.4f}'.format(epoch + 1, num_epochs, loss_avg))
+        losses.append(loss_avg)
         output = model(ref_img)
         pic = to_img(output.cpu().data)
         save_image(pic, './mlp_img_ld{}/image_{}.png'.format(model.latent_dim, epoch))
-        if epoch % 10 == 0:
-            save_checkpoint(model, losses, epoch, ref_img)
+        save_checkpoint(model, losses, epoch, ref_img)
+        gc.collect()
 
 
 def save_checkpoint(model, losses, epoch, ref_img):
     cp_dict = {
-        'model_state_dict': model.state_dict,
+        'model_state_dict': model.state_dict(),
         'losses': losses,
         'epoch': epoch,
         'ref_img': ref_img,
@@ -135,11 +139,11 @@ def save_checkpoint(model, losses, epoch, ref_img):
     torch.save(cp_dict, CP_TEMPLATE.format(model.latent_dim))
 
 
-def load_checkpoint(cp_path):
+def load_checkpoint(cp_path, model, optimizer):
     cp = torch.load(cp_path)
-    model = Autoencoder(cp['latent_dim'])
     model.load_state_dict(cp['model_state_dict'])
-    return model, cp['losses'], cp['epoch'], cp['ref_img']
+    optimizer.params = model.parameters()
+    return model, optimizer, cp['losses'], cp['epoch'], cp['ref_img']
 
 
 def main():
