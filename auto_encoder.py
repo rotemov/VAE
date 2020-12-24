@@ -11,6 +11,8 @@ from torchvision.utils import save_image
 import gc as gc
 from matplotlib import pyplot as plt
 import numpy as np
+from simple_ae_model import Autoencoder
+import imageio
 
 # Inspired by: https://github.com/L1aoXingyu/pytorch-beginner
 # Learning settings
@@ -24,14 +26,14 @@ WEIGHT_DECAY = 1e-5
 
 # Dataset settings
 SIGNAL_DIGIT = 5
-GENERATE_DIGIT = 8
+GENERATE_DIGIT = 6
 TEST_SET_SIZE = 10 ** 4
 
 # Model settings
 LATENT_DIMS = [2, 3, 6, 9, 12]
 
 # Plot settings
-NBINS = 30
+NBINS = 15
 
 # Creating needed directories
 for ld in LATENT_DIMS:
@@ -39,43 +41,6 @@ for ld in LATENT_DIMS:
         os.mkdir('./mlp_img_ld{}'.format(ld))
     if not os.path.exists(os.path.join('./mlp_img_ld{}'.format(ld), "images")):
         os.mkdir(os.path.join('./mlp_img_ld{}'.format(ld), "images"))
-
-
-class Autoencoder(nn.Module):
-    def __init__(self, latent_dim):
-        super(Autoencoder, self).__init__()
-        self.latent_dim = latent_dim
-        self.encoder = nn.Sequential(
-            nn.Linear(28 * 28, 128),
-            nn.ReLU(True),
-            nn.Linear(128, 64),
-            nn.ReLU(True),
-            nn.Linear(64, 12),
-            nn.ReLU(True),
-            nn.Linear(12, latent_dim),
-            nn.ReLU(True))
-        self.decoder = nn.Sequential(
-            nn.Linear(latent_dim, 12),
-            nn.ReLU(True),
-            nn.Linear(12, 64),
-            nn.ReLU(True),
-            nn.Linear(64, 128),
-            nn.ReLU(True),
-            nn.Linear(128, 28 * 28),
-            nn.Tanh())
-
-    def forward(self, x):
-        x = self.encoder(x)
-        x = self.decoder(x)
-        return x
-
-    def encode(self, x):
-        x = self.encoder(x)
-        return x
-
-    def decode(self, x):
-        x = self.decoder(x)
-        return x
 
 
 def get_dataloaders():
@@ -94,10 +59,10 @@ def get_dataloaders():
     gen_idx = [i for i in range(len(bg_train)) if bg_train[i][1] == GENERATE_DIGIT]
     gen = utils.Subset(bg_train, gen_idx)
     data_loaders = {
-        "Training data": DataLoader(bg_train, batch_size=BATCH_SIZE, shuffle=True),
-        "Test data": DataLoader(bg_test, batch_size=BATCH_SIZE, shuffle=False),
-        "Anomalies": DataLoader(sig, batch_size=BATCH_SIZE, shuffle=False),
-        "Generate": DataLoader(gen, batch_size=BATCH_SIZE, shuffle=False)
+        "Training data": DataLoader(bg_train, batch_size=BATCH_SIZE, shuffle=True, drop_last=True),
+        "Test data": DataLoader(bg_test, batch_size=BATCH_SIZE, shuffle=False, drop_last=True),
+        "Anomalies": DataLoader(sig, batch_size=BATCH_SIZE, shuffle=False, drop_last=True),
+        "Generate": DataLoader(gen, batch_size=BATCH_SIZE, shuffle=False, drop_last=True)
     }
     return data_loaders
 
@@ -107,6 +72,14 @@ def to_pic(x):
     x = x.clamp(0, 1)
     x = x.view(x.size(0), 1, 28, 28)
     return x
+
+
+def generate_gif(result_dir):
+    images = []
+    for i in range(NUM_EPOCHS):
+        image_path = os.path.join(result_dir, "images", "image_{}.png".format(i))
+        images.append(imageio.imread(image_path))
+    imageio.mimsave(os.path.join(result_dir, "training.gif"), images, duration=0.1)
 
 
 def data_to_img(data):
@@ -179,7 +152,7 @@ def get_batch_losses(model, dataloader, criterion, result_dir, dset_name, input_
             noised_output = model(noised_img)
         elif latent_noise:  # generating digits
             noised_img = model.encode(img)
-            noised_img += torch.randn_like(noised_img)
+            noised_img += torch.randn_like(noised_img) * 5
             noised_output = model.decode(noised_img)
         if input_noise or latent_noise:
             noised_loss = criterion(noised_output, img)
@@ -234,6 +207,7 @@ def evaluate_model(model, criterion, optimizer, dataloaders, cp_path):
     result_dir = './mlp_img_ld{}'.format(model.latent_dim)
     plot_training_loss(losses, result_dir)
     plot_batch_loss_histograms(model, dataloaders, criterion, result_dir)
+    generate_gif(result_dir)
 
 
 def save_checkpoint(model, losses, epoch, ref_img):
@@ -267,6 +241,7 @@ def main():
         # train_model(model, criterion, optimizer, data_loaders["Training data"], num_epochs=NUM_EPOCHS)
         print("Starting tests")
         evaluate_model(model, criterion, optimizer, data_loaders, cp_path=CP_TEMPLATE.format(ld))
+        # generate_gif('./mlp_img_ld{}'.format(model.latent_dim))
 
 
 if __name__ == "__main__":
