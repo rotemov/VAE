@@ -2,6 +2,9 @@ from torch import nn
 
 
 class Autoencoder(nn.Module):
+
+    CRITERION = nn.MSELoss()
+
     def __init__(self, latent_dim):
         super(Autoencoder, self).__init__()
         self.latent_dim = latent_dim
@@ -36,3 +39,6 @@ class Autoencoder(nn.Module):
     def decode(self, x):
         x = self.decoder(x)
         return x
+
+    def predict(self, x):
+        return self.forward(x)

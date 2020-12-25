@@ -1,6 +1,5 @@
 import os
 import torch
-from torch import nn
 import torch.utils.data as utils
 from torch.autograd import Variable
 from torch.utils.data import DataLoader
@@ -12,6 +11,7 @@ import gc as gc
 from matplotlib import pyplot as plt
 import numpy as np
 from simple_ae_model import Autoencoder
+from vae_model import VAE
 import imageio
 
 # Inspired by: https://github.com/L1aoXingyu/pytorch-beginner
@@ -30,10 +30,12 @@ GENERATE_DIGIT = 6
 TEST_SET_SIZE = 10 ** 4
 
 # Model settings
-LATENT_DIMS = [2, 3, 6, 9, 12]
+MODEL = VAE
+LATENT_DIMS = [1, 2, 4]
 
 # Plot settings
 NBINS = 15
+
 
 # Creating needed directories
 for ld in LATENT_DIMS:
@@ -108,8 +110,8 @@ def train_model(model, criterion, optimizer, dataloader, num_epochs):
                 save_image(pic, './mlp_img_ld{}/images/ref_image.png'.format(model.latent_dim))
 
             # Forward
-            output = model(img)
-            loss = criterion(output, img)
+            prediction = model(img)
+            loss = criterion(prediction, img)
 
             # Back-prop
             optimizer.zero_grad()
@@ -121,8 +123,8 @@ def train_model(model, criterion, optimizer, dataloader, num_epochs):
         loss_avg = loss_sum / len(dataloader)
         print('epoch [{}/{}], loss:{:.4f}'.format(epoch + 1, num_epochs, loss_avg))
         losses.append(loss_avg)
-        output = model(ref_img)
-        pic = to_pic(output.cpu().data)
+        prediction = model.predict(ref_img)
+        pic = to_pic(prediction.cpu().data)
         save_image(pic, './mlp_img_ld{}/images/image_{}.png'.format(model.latent_dim, epoch))
         save_checkpoint(model, losses, epoch, ref_img)
         gc.collect()
@@ -158,10 +160,12 @@ def get_batch_losses(model, dataloader, criterion, result_dir, dset_name, input_
             noised_loss = criterion(noised_output, img)
             noise_losses[i] = noised_loss.item()
     if input_noise or latent_noise:
+        noised_output = model.predict(noised_img)
         save_image(to_pic(noised_output), os.path.join(result_dir, "noised_out_{}.png".format(dset_name)))
     if input_noise:
         save_image(to_pic(noised_img), os.path.join(result_dir, "noised_ref_{}.png".format(dset_name)))
     save_image(to_pic(img), os.path.join(result_dir, "ref_{}.png".format(dset_name)))
+    output = model.predict(img)
     save_image(to_pic(output), os.path.join(result_dir, "out_{}.png".format(dset_name)))
     return losses, noise_losses
 
@@ -234,14 +238,13 @@ def main():
     print("Datasets loaded for signal digit {} and generate digit {}".format(SIGNAL_DIGIT, GENERATE_DIGIT))
     for ld in LATENT_DIMS:
         print("Staring run for latent dim: {}".format(ld))
-        model = Autoencoder(ld).cuda()
-        criterion = nn.MSELoss()
+        model = MODEL(ld).cuda()
+        criterion = MODEL.CRITERION
         optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
         print("Starting training learning rate {} and weight decay {}".format(LEARNING_RATE, WEIGHT_DECAY))
-        # train_model(model, criterion, optimizer, data_loaders["Training data"], num_epochs=NUM_EPOCHS)
+        train_model(model, criterion, optimizer, data_loaders["Training data"], num_epochs=NUM_EPOCHS)
         print("Starting tests")
         evaluate_model(model, criterion, optimizer, data_loaders, cp_path=CP_TEMPLATE.format(ld))
-        # generate_gif('./mlp_img_ld{}'.format(model.latent_dim))
 
 
 if __name__ == "__main__":
