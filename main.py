@@ -11,7 +11,7 @@ import gc as gc
 from matplotlib import pyplot as plt
 import numpy as np
 from simple_ae_model import Autoencoder
-from vae_model import VAE
+from vae_model import *
 import imageio
 
 # Inspired by: https://github.com/L1aoXingyu/pytorch-beginner
@@ -22,7 +22,6 @@ BATCH_SIZE = 128
 
 # Optimizer settings
 LEARNING_RATE = 1e-3
-WEIGHT_DECAY = 1e-5
 
 # Dataset settings
 SIGNAL_DIGIT = 5
@@ -31,7 +30,7 @@ TEST_SET_SIZE = 10 ** 4
 
 # Model settings
 MODEL = VAE
-LATENT_DIMS = [1, 2, 4]
+LATENT_DIMS = [2, 20, 10]
 
 # Plot settings
 NBINS = 15
@@ -48,7 +47,7 @@ for ld in LATENT_DIMS:
 def get_dataloaders():
     img_transform = transforms.Compose([
         transforms.ToTensor(),
-        transforms.Normalize([0.5], [0.5]),
+        # transforms.Normalize([0.5], [0.5]),
     ])
     dataset = MNIST('./data', transform=img_transform, download=True)
     sig_mask = dataset.train_labels == SIGNAL_DIGIT
@@ -70,7 +69,7 @@ def get_dataloaders():
 
 
 def to_pic(x):
-    x = 0.5 * (x + 1)
+    # x = 0.5 * (x + 1)
     x = x.clamp(0, 1)
     x = x.view(x.size(0), 1, 28, 28)
     return x
@@ -87,7 +86,7 @@ def generate_gif(result_dir):
 def data_to_img(data):
     img, _ = data
     img = img.view(img.size(0), -1)
-    img = Variable(img).cuda()
+    img = Variable(img) #  .cuda()
     return img
 
 
@@ -238,10 +237,10 @@ def main():
     print("Datasets loaded for signal digit {} and generate digit {}".format(SIGNAL_DIGIT, GENERATE_DIGIT))
     for ld in LATENT_DIMS:
         print("Staring run for latent dim: {}".format(ld))
-        model = MODEL(ld).cuda()
+        model = MODEL(ld)  #.cuda()
         criterion = MODEL.CRITERION
-        optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
-        print("Starting training learning rate {} and weight decay {}".format(LEARNING_RATE, WEIGHT_DECAY))
+        optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
+        print("Starting training learning rate {}".format(LEARNING_RATE))
         train_model(model, criterion, optimizer, data_loaders["Training data"], num_epochs=NUM_EPOCHS)
         print("Starting tests")
         evaluate_model(model, criterion, optimizer, data_loaders, cp_path=CP_TEMPLATE.format(ld))
