@@ -42,3 +42,6 @@ class Autoencoder(nn.Module):
 
     def predict(self, x):
         return self.forward(x)
+
+    def get_latent_value(self, x):
+        return self.encode(x)
