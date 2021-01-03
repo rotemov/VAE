@@ -13,10 +13,9 @@ import numpy as np
 from simple_ae_model import Autoencoder
 from vae_model import *
 import imageio
-from torchviz import make_dot
 
 # Inspired by: https://github.com/L1aoXingyu/pytorch-beginner
-# Learning settings
+# Training settings
 CP_TEMPLATE = './mlp_img_ld{}/sim_autoencoder.pth'
 NUM_EPOCHS = 100
 BATCH_SIZE = 128
@@ -33,8 +32,9 @@ TEST_SET_SIZE = 10 ** 4
 MODEL = VAE
 LATENT_DIMS = [2]
 
-# Plot settings
+# Test settings
 NBINS = 15
+LATENT_SPACE_SAMPLE_SIZE = 128
 
 
 # Creating needed directories
@@ -68,7 +68,7 @@ def get_dataloaders():
         "Training data": DataLoader(bg_train, batch_size=BATCH_SIZE, shuffle=True, drop_last=True),
         "Test data": DataLoader(bg_test, batch_size=BATCH_SIZE, shuffle=False, drop_last=True),
         "Anomalies": digit_dataloaders[SIGNAL_DIGIT],
-        "Generate": DataLoader(gen, batch_size=BATCH_SIZE, shuffle=False, drop_last=True)
+        "Pre latent noise": DataLoader(gen, batch_size=BATCH_SIZE, shuffle=False, drop_last=True)
     }
     return data_loaders, digit_dataloaders
 
@@ -91,7 +91,7 @@ def generate_gif(result_dir):
 def data_to_img(data):
     img, _ = data
     img = img.view(img.size(0), -1)
-    img = Variable(img) #  .cuda()
+    img = Variable(img)
     return img
 
 
@@ -104,7 +104,7 @@ def train_model(model, criterion, optimizer, dataloader, num_epochs):
         losses = []
         last_epoch = 0
 
-    for epoch in range(last_epoch, num_epochs):
+    for epoch in range(last_epoch+1, num_epochs):
         loss_sum = 0
         for data in dataloader:
             img = data_to_img(data)
@@ -158,7 +158,7 @@ def get_batch_losses(model, dataloader, criterion, result_dir, dset_name, input_
             noised_output = model.predict(noised_img)
         elif latent_noise:  # generating digits
             noised_img = model.get_latent_value(img)
-            noised_img += torch.randn_like(noised_img) * 5
+            noised_img += torch.randn_like(noised_img) * 0.5
             noised_output = model.decode(noised_img)
         if input_noise or latent_noise:
             noised_loss = criterion(noised_output, img)
@@ -170,7 +170,6 @@ def get_batch_losses(model, dataloader, criterion, result_dir, dset_name, input_
     save_image(to_pic(img), os.path.join(result_dir, "ref_{}.png".format(dset_name)))
     output = model.predict(img)
     save_image(to_pic(output), os.path.join(result_dir, "out_{}.png".format(dset_name)))
-    # make_dot(output, params=model.named_parameters())
     return losses, noise_losses
 
 
@@ -181,7 +180,7 @@ def plot_batch_loss_histograms(model, dataloaders, criterion, result_dir):
     for dset in datasets:
         print("Performing {} tests".format(dset))
         input_noise_flag = dset == "Test data"
-        latent_noise_flag = dset == "Generate"
+        latent_noise_flag = dset == "Pre latent noise"
         losses, noise_losses = get_batch_losses(model, dataloaders[dset], criterion, result_dir, dset, input_noise_flag,
                                                 latent_noise_flag)
         plt.figure(traditional)
@@ -193,7 +192,7 @@ def plot_batch_loss_histograms(model, dataloaders, criterion, result_dir):
             plt.hist(np.array(noise_losses), bins=NBINS, label="Noised {}".format(dset))
         elif latent_noise_flag:
             plt.hist(np.array(losses), bins=NBINS, label=dset)
-            plt.hist(np.array(noise_losses), bins=NBINS, label="Generated {}".format(GENERATE_DIGIT))
+            plt.hist(np.array(noise_losses), bins=NBINS, label="Latent noise {}".format(GENERATE_DIGIT))
     file_names = {
         traditional: "loss_histograms.png",
         noise: "loss_histograms_noise.png"
@@ -217,7 +216,7 @@ def sample_test(model, result_dir, sample_size=BATCH_SIZE):
 
 def latent_dim_map(model, digit_dataloaders, result_dir):
     plt.figure()
-    plt.title("Latent space")
+    plt.title("Latent space avg. over batches")
     plt.xlabel("Dim 1")
     plt.ylabel("Dim 2")
     for i in range(len(digit_dataloaders)):
@@ -231,11 +230,17 @@ def latent_dim_map(model, digit_dataloaders, result_dir):
     plt.legend()
     plt.savefig(os.path.join(result_dir, "latent_space.png"))
     plt.close()
+    x = np.linspace(-2, 2, 8)
+    y = np.linspace(-2, 2, 8)[::-1]
+    grid = torch.tensor(np.dstack(np.meshgrid(x, y)).reshape(8**2, 2)).to(torch.float)
+    sample = model.decode(grid)
+    save_image(to_pic(sample), os.path.join(result_dir, "grid.png"))
 
 
 def evaluate_model(model, criterion, optimizer, dataloaders, digit_dataloaders, cp_path):
     model, optimizer, losses, _, _ = load_checkpoint(cp_path, model, optimizer)
     model.eval()
+    model.requires_grad_(False)
     result_dir = './mlp_img_ld{}'.format(model.latent_dim)
     if model.latent_dim == 2:
         print("Creating latent dimension map")
@@ -275,7 +280,7 @@ def main():
         criterion = MODEL.CRITERION
         optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
         print("Starting training learning rate {}".format(LEARNING_RATE))
-        # train_model(model, criterion, optimizer, data_loaders["Training data"], num_epochs=NUM_EPOCHS)
+        train_model(model, criterion, optimizer, data_loaders["Training data"], num_epochs=NUM_EPOCHS)
         print("Starting tests")
         criterion = nn.MSELoss()
         evaluate_model(model, criterion, optimizer, data_loaders, digit_dataloaders, cp_path=CP_TEMPLATE.format(ld))
