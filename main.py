@@ -29,7 +29,7 @@ GENERATE_DIGIT = 6
 TEST_SET_SIZE = 10 ** 4
 
 # Model settings
-MODEL = VAE
+MODEL = Autoencoder
 LATENT_DIMS = [2]
 
 # Test settings
@@ -114,8 +114,8 @@ def train_model(model, criterion, optimizer, dataloader, num_epochs):
                 save_image(pic, './mlp_img_ld{}/images/ref_image.png'.format(model.latent_dim))
 
             # Forward
-            prediction = model(img)
-            loss = criterion(prediction, img)
+            prediction, latent = model(img)
+            loss = criterion(prediction, img, latent, epoch)
 
             # Back-prop
             optimizer.zero_grad()
@@ -258,7 +258,8 @@ def save_checkpoint(model, losses, epoch, ref_img):
         'losses': losses,
         'epoch': epoch,
         'ref_img': ref_img,
-        'latent_dim': model.latent_dim
+        'latent_dim': model.latent_dim,
+        'centroids': Autoencoder.CENTROIDS
     }
     torch.save(cp_dict, CP_TEMPLATE.format(model.latent_dim))
 
@@ -266,6 +267,7 @@ def save_checkpoint(model, losses, epoch, ref_img):
 def load_checkpoint(cp_path, model, optimizer):
     cp = torch.load(cp_path)
     model.load_state_dict(cp['model_state_dict'])
+    Autoencoder.CENTROIDS = cp['centroids']
     optimizer.params = model.parameters()
     return model, optimizer, cp['losses'], cp['epoch'], cp['ref_img']
 
@@ -276,7 +278,7 @@ def main():
     print("Datasets loaded for signal digit {} and generate digit {}".format(SIGNAL_DIGIT, GENERATE_DIGIT))
     for ld in LATENT_DIMS:
         print("Staring run for latent dim: {}".format(ld))
-        model = MODEL(ld)  #.cuda()
+        model = MODEL(ld)
         criterion = MODEL.CRITERION
         optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
         print("Starting training learning rate {}".format(LEARNING_RATE))
